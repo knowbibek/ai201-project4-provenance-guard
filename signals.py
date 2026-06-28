@@ -10,6 +10,7 @@ Signal 2 (stylometry) and score fusion are added in Milestone 4.
 """
 import json
 import re
+import statistics
 
 from groq import Groq
 
@@ -71,3 +72,91 @@ def signal_llm(text: str) -> dict:
             "reasoning": f"unparseable — treated as uncertain ({exc})",
             "available": False,
         }
+
+
+# ---------------------------------------------------------------------------
+# Signal 2 — stylometric heuristics (pure Python, no network)
+# Three sub-metrics -> three AI-likelihoods -> weighted combine. See planning.md §1.
+# ---------------------------------------------------------------------------
+
+_MATTR_WINDOW = 50
+_EXPRESSIVE_MARKS = {";", ":", "—", "–", "(", ")", "?"}
+
+
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def _linear_ai(value: float, human_at: float, ai_at: float) -> float:
+    """Map a metric to an AI-likelihood: `human_at` -> 0.0, `ai_at` -> 1.0, linear/clamped between."""
+    return _clamp01((human_at - value) / (human_at - ai_at))
+
+
+def _sentence_lengths(text: str) -> list[int]:
+    parts = [s for s in re.split(r"[.!?]+", text) if s.strip()]
+    return [len(p.split()) for p in parts]
+
+
+def _mattr(tokens: list[str], window: int = _MATTR_WINDOW) -> float:
+    """Moving-average type-token ratio (length-robust lexical diversity)."""
+    if not tokens:
+        return 0.0
+    if len(tokens) <= window:
+        return len(set(tokens)) / len(tokens)
+    ratios = []
+    for i in range(len(tokens) - window + 1):
+        chunk = tokens[i : i + window]
+        ratios.append(len(set(chunk)) / window)
+    return sum(ratios) / len(ratios)
+
+
+def signal_stylometry(text: str) -> dict:
+    """Return Signal 2's assessment of `text`.
+
+    Output:
+        {"name": "stylometry", "score": 0-1, "metrics": {...},
+         "available": True, "low_reliability": bool}
+    where score is AI-likelihood (0 = human, 1 = AI).
+    """
+    word_count = len(text.split())
+    sent_lengths = _sentence_lengths(text)
+    tokens = re.findall(r"[a-z']+", text.lower())
+
+    # Burstiness: coefficient of variation of sentence length. Low CV -> uniform -> AI.
+    if len(sent_lengths) >= 2 and statistics.mean(sent_lengths) > 0:
+        cv = statistics.stdev(sent_lengths) / statistics.mean(sent_lengths)
+    else:
+        cv = 0.0
+    ai_burst = _linear_ai(cv, human_at=0.60, ai_at=0.30)
+
+    # Lexical diversity (MATTR). Middling diversity -> AI-leaning.
+    mattr = _mattr(tokens)
+    ai_mattr = _linear_ai(mattr, human_at=0.75, ai_at=0.55)
+
+    # Punctuation variety: number of distinct "expressive" marks present. Sparse -> AI-leaning.
+    distinct_marks = len({c for c in text if c in _EXPRESSIVE_MARKS})
+    ai_punct = _clamp01((3 - distinct_marks) / 3)
+
+    score = _clamp01(0.50 * ai_burst + 0.25 * ai_mattr + 0.25 * ai_punct)
+
+    # Length guard (fail-closed): too short for stable stats -> neutral + flag.
+    low_reliability = word_count < 40 or len(sent_lengths) < 3
+    if low_reliability:
+        score = 0.5
+
+    return {
+        "name": "stylometry",
+        "score": round(score, 4),
+        "metrics": {
+            "word_count": word_count,
+            "sentence_count": len(sent_lengths),
+            "cv": round(cv, 4),
+            "mattr": round(mattr, 4),
+            "distinct_marks": distinct_marks,
+            "ai_burst": round(ai_burst, 4),
+            "ai_mattr": round(ai_mattr, 4),
+            "ai_punct": round(ai_punct, 4),
+        },
+        "available": True,
+        "low_reliability": low_reliability,
+    }

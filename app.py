@@ -9,33 +9,11 @@ import uuid
 from flask import Flask, jsonify, request
 
 from audit import get_log, init_db, log_decision, _utc_now
-from config import ATTR_AI, ATTR_HUMAN, ATTR_UNCERTAIN
-from signals import signal_llm
+from scoring import score_confidence
+from signals import signal_llm, signal_stylometry
 
 app = Flask(__name__)
 init_db()
-
-
-def _placeholder_verdict(llm: dict) -> dict:
-    """M3 stand-in: derive attribution from Signal 1 alone.
-
-    Real fusion + calibrated confidence arrive in M4; real label text in M5.
-    """
-    score = llm["score"]
-    if not llm["available"]:
-        attribution = ATTR_UNCERTAIN
-    elif score >= 0.5:
-        attribution = ATTR_AI
-    else:
-        attribution = ATTR_HUMAN
-    return {
-        "attribution": attribution,
-        "confidence": round(abs(score - 0.5) * 2, 2),  # placeholder (single-signal)
-        "label": {
-            "variant": attribution,
-            "text": "(placeholder — final label logic added in Milestone 5)",
-        },
-    }
 
 
 @app.post("/submit")
@@ -51,7 +29,15 @@ def submit():
 
     content_id = str(uuid.uuid4())
     llm = signal_llm(text)
-    verdict = _placeholder_verdict(llm)
+    stylometry = signal_stylometry(text)
+    verdict = score_confidence(llm, stylometry)
+
+    # Final label text is M5; for now the variant tracks the real verdict.
+    label = {
+        "variant": verdict["attribution"],
+        "text": "(placeholder — final label logic added in Milestone 5)",
+    }
+    signals = [llm, stylometry]
 
     record = {
         "content_id": content_id,
@@ -62,10 +48,10 @@ def submit():
         "attribution": verdict["attribution"],
         "confidence": verdict["confidence"],
         "llm_score": llm["score"],
-        "stylometry_score": None,  # added in M4
-        "label_variant": verdict["label"]["variant"],
-        "label_text": verdict["label"]["text"],
-        "signals_json": json.dumps([llm]),
+        "stylometry_score": stylometry["score"],
+        "label_variant": label["variant"],
+        "label_text": label["text"],
+        "signals_json": json.dumps(signals),
         "status": "classified",
     }
     log_decision(record)
@@ -75,9 +61,10 @@ def submit():
             "content_id": content_id,
             "creator_id": creator_id,
             "attribution": verdict["attribution"],
+            "ai_likelihood": verdict["ai_likelihood"],
             "confidence": verdict["confidence"],
-            "label": verdict["label"],
-            "signals": [llm],
+            "label": label,
+            "signals": signals,
             "created_at": record["timestamp"],
         }
     )
