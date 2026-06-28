@@ -1,23 +1,41 @@
 """Provenance Guard — Flask API.
 
-Milestone 3: POST /submit (Signal 1 only) + structured audit log + GET /log.
-Confidence and label are PLACEHOLDERS until Milestone 4 (fusion) and Milestone 5 (label logic).
+Endpoints:
+  POST /submit   text -> two-signal classification + confidence + transparency label (rate limited)
+  POST /appeal   contest a classification -> status 'under_review' + logged (rate limited)
+  GET  /log      structured audit log (decisions + any appeals), newest first
+  GET  /health   liveness
 """
 import json
 import uuid
 
+from flask import Flask, jsonify, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
-from flask import Flask, jsonify, request  # type: ignore[import]
-
-from audit import get_log, init_db, log_decision, _utc_now
+from audit import _utc_now, get_log, init_db, log_appeal, log_decision
+from labels import build_label
 from scoring import score_confidence
 from signals import signal_llm, signal_stylometry
 
 app = Flask(__name__)
 init_db()
 
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({"error": "rate limit exceeded", "detail": str(e.description)}), 429
+
 
 @app.post("/submit")
+@limiter.limit("10 per minute;100 per hour;300 per day")
 def submit():
     body = request.get_json(silent=True) or {}
     text = (body.get("text") or "").strip()
@@ -32,12 +50,7 @@ def submit():
     llm = signal_llm(text)
     stylometry = signal_stylometry(text)
     verdict = score_confidence(llm, stylometry)
-
-    # Final label text is M5; for now the variant tracks the real verdict.
-    label = {
-        "variant": verdict["attribution"],
-        "text": "(placeholder — final label logic added in Milestone 5)",
-    }
+    label = build_label(verdict["attribution"])
     signals = [llm, stylometry]
 
     record = {
@@ -48,6 +61,7 @@ def submit():
         "content_excerpt": text[:300],
         "attribution": verdict["attribution"],
         "confidence": verdict["confidence"],
+        "ai_likelihood": verdict["ai_likelihood"],
         "llm_score": llm["score"],
         "stylometry_score": stylometry["score"],
         "label_variant": label["variant"],
@@ -66,12 +80,33 @@ def submit():
             "confidence": verdict["confidence"],
             "label": label,
             "signals": signals,
+            "status": "classified",
             "created_at": record["timestamp"],
         }
     )
 
 
+@app.post("/appeal")
+@limiter.limit("5 per minute;20 per hour")
+def appeal():
+    body = request.get_json(silent=True) or {}
+    content_id = body.get("content_id")
+    reasoning = (body.get("creator_reasoning") or "").strip()
+
+    if not content_id:
+        return jsonify({"error": "field 'content_id' is required"}), 400
+    if not reasoning:
+        return jsonify({"error": "field 'creator_reasoning' is required"}), 400
+
+    result = log_appeal(content_id, reasoning)
+    if result is None:
+        return jsonify({"error": f"no submission found for content_id {content_id}"}), 404
+
+    return jsonify({**result, "message": "Appeal received. This content is now under review."})
+
+
 @app.get("/log")
+@limiter.limit("30 per minute")
 def log():
     limit = request.args.get("limit", default=50, type=int)
     return jsonify({"entries": get_log(limit)})
