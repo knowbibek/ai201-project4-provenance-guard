@@ -89,14 +89,23 @@ all thresholds are revisited against the labeled test set in M4 (see *AI Tool Pl
 We report two numbers internally and **never show a raw decimal to end users** (you can't meaningfully
 explain "0.62" to a reader — we show a confidence *band* + plain language instead).
 
-- **`ai_likelihood ∈ [0,1]`** — direction only (<0.5 human, >0.5 AI).
-- **`confidence ∈ [0,1]`** — how strongly *and consistently* the evidence points to the verdict:
+- **`ai_likelihood ∈ [0,1]`** — direction only (<0.5 human, >0.5 AI). Weighted average:
+  `0.60·s1 + 0.40·s2` (or `0.85·s1 + 0.15·s2` if stylometry is low-reliability).
+- **`confidence ∈ [0,1]`** — how strongly the evidence points to the verdict. The **LLM is the
+  primary signal** (far stronger at this task); stylometry corroborates or dissents but cannot assert
+  a verdict on its own:
   ```
-  decisiveness = 2 · |combined − 0.5|        # 0 at the fence, 1 at the extremes
-  agreement    = 1 − |s1 − s2|               # 1 when both signals agree, 0 when opposite
-  confidence   = decisiveness · (0.4 + 0.6 · agreement)   # disagreement suppresses confidence
-  if stylometry.low_reliability: confidence = min(confidence, 0.55)   # short text can't be "high conf"
+  base    = 2 · |s1 − 0.5|                 # LLM decisiveness sets the confidence ceiling
+  overlap = 2 · min(|s1−0.5|, |s2−0.5|)    # how strongly the weaker signal weighs in
+  if signals on the SAME side of 0.5:  confidence = base + (1 − base)·overlap   # corroborate
+  if on OPPOSITE sides:                confidence = base · (1 − overlap)         # dissent erodes
+  if stylometry is neutral:            confidence = base
+  if stylometry.low_reliability:       confidence = min(confidence, 0.55)        # short text cap
   ```
+  Because `base` comes only from the LLM, a failed/neutral LLM (score 0.5 → base 0) drives confidence
+  toward 0 → **uncertain**. Stylometry alone can never produce a confident accusation — **fail-closed**,
+  and the reason a confident human-detection or AI-detection is always LLM-led with stylometry as
+  supporting evidence.
 
 **What a confidence of 0.6 means to this system:** *moderately sure.* We treat **≥ 0.50 as enough to
 state a "likely human" verdict, but require ≥ 0.65 to state a "likely AI" verdict.** So a 0.6 lands as

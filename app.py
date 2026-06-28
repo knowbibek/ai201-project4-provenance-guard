@@ -6,7 +6,8 @@ Confidence and label are PLACEHOLDERS until Milestone 4 (fusion) and Milestone 5
 import json
 import uuid
 
-from flask import Flask, jsonify, request
+
+from flask import Flask, jsonify, request  # type: ignore[import]
 
 from audit import get_log, init_db, log_decision, _utc_now
 from scoring import score_confidence

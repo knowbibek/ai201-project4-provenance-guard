@@ -83,10 +83,13 @@ Their blind spots barely overlap, so disagreement is itself useful signal. See
 
 ## Confidence Scoring
 
-We track `ai_likelihood ∈ [0,1]` (direction: 0 = human, 1 = AI) and a separate `confidence ∈ [0,1]`
-(how strongly and consistently the evidence points). Fusion: `0.6·LLM + 0.4·stylometry`, then
-`confidence = decisiveness · (0.4 + 0.6·agreement)` — so **signal disagreement suppresses confidence**.
-Users never see the raw decimal; they see a confidence *band* + plain language.
+We track `ai_likelihood ∈ [0,1]` (direction: 0 = human, 1 = AI) and a separate `confidence ∈ [0,1]`.
+`ai_likelihood` is the weighted average `0.6·LLM + 0.4·stylometry`. Confidence treats the **LLM as the
+primary signal** (it's far stronger at this task): `base = 2·|LLM−0.5|` sets the ceiling, and
+stylometry then **corroborates** (same side → raises confidence) or **dissents** (opposite side →
+erodes it). Because `base` comes only from the LLM, stylometry can never assert a verdict alone — if
+the LLM is unavailable, confidence collapses to ~0 → `uncertain` (**fail-closed**). Users never see the
+raw decimal; they see a confidence *band* + plain language.
 
 The mapping is **not** a binary flip at 0.5 — it's an **asymmetric three-way** split (harder to assert
 "AI" than "human", because false positives are the worst outcome):
@@ -101,13 +104,13 @@ The mapping is **not** a binary flip at 0.5 — it's an **asymmetric three-way**
 So a confidence of **0.6 means "moderately sure"**: enough to state *likely human*, but on the AI side
 it stays *uncertain*. Full formulas + calibration plan: [planning.md](planning.md#2-uncertainty-representation).
 
-**How we tested it's meaningful:** the fusion logic in [scoring.py](scoring.py) was verified against
-six simulated signal pairs covering each branch — strong-agree AI → `likely_ai`, strong-agree human →
-`likely_human`, signals-disagree (the poem case) → `uncertain`, AI-side-but-weak-confidence →
-`uncertain`, and short-text (capped) → `uncertain`. All three verdicts are reachable and the
-asymmetric AI bar holds. Stylometry alone was tested on the four canonical inputs (clear-AI ≈ 0.48,
-clear-human ≈ 0.17), confirming the structural signal varies meaningfully and exposes its own blind
-spot (it can't flag polished AI — that's Signal 1's job). Reproduce both with `python selftest.py`.
+**How we tested it's meaningful:** run `python selftest.py` for the four-input calibration check. On
+real signal scores it produces: **clear-AI → `likely_ai`** (conf ≈ 0.76), **clear-human →
+`likely_human`** (conf ≈ 0.84), **formal-human → `uncertain`** (false positive avoided), **edited-AI →
+`likely_human`**. The fusion in [scoring.py](scoring.py) was additionally checked against seven
+boundary pairs, all matching spec, including the two that matter most: opposite signals (the poem) →
+`uncertain`, and **LLM-unavailable + stylometry screaming AI → `uncertain`** (fail-closed — stylometry
+can't accuse on its own). All three verdicts are reachable and the asymmetric AI bar holds.
 
 ## Transparency Labels
 
