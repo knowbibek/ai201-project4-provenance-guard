@@ -29,6 +29,7 @@ we fall back toward *uncertain*, never toward an AI accusation.
 
 Two **distinct** signals — one semantic, one structural — combined into a single confidence score.
 Each signal outputs an **AI-likelihood in [0,1]** (0 = clearly human, 1 = clearly AI) plus metadata.
+*(A third, lexical signal was later added as the ensemble stretch — see [Stretch Features](#stretch-features).)*
 
 ### Signal 1 — LLM semantic classifier (Groq `llama-3.3-70b-versatile`)
 
@@ -337,7 +338,7 @@ For each milestone: which spec sections to hand the AI tool, what to ask it to g
 
 ---
 
-## Stretch Features (update this section before starting any)
+## Stretch Features
 
 - [x] **Ensemble detection (3+ signals, documented weighting/voting)** — see plan below
 - [ ] Provenance certificate ("verified human" credential)
@@ -367,8 +368,11 @@ form*; the lexical detector matches a *specific surface fingerprint*. Three diff
 - All three individual signal scores are returned in `/submit`'s `signals` array and stored in the
   audit log, so the ensemble result is always shown alongside its components.
 
-## Open Questions (resolve during M4 tuning)
+## Resolved Decisions (settled during M4 tuning)
 
-- Final signal weights (default 0.6/0.4) and the confidence cutoffs (0.50 / 0.65) — validate on the test set.
-- Exact stylometric cutoffs (CV 0.30/0.60, MATTR 0.55/0.75) — adjust if clear cases miss the bars.
-- Whether to expose per-signal reasoning in the public `/submit` response or keep it audit-only.
+- **Signal weights & cutoffs:** kept the defaults — `0.6/0.4` (LLM/panel) and the `0.50 / 0.65`
+  confidence bars held up against the calibration set, so no change.
+- **Stylometric cutoffs:** kept (CV `0.30/0.60`, MATTR `0.55/0.75`); clear cases cleared the bars.
+- **Per-signal detail in `/submit`:** decided to **expose** the full `signals` array publicly (not
+  audit-only) — transparency is a core goal, and showing each signal's score alongside the ensemble
+  result is exactly what the stretch rubric asks for.

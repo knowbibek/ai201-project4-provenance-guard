@@ -1,12 +1,13 @@
-"""Detection signals.
+"""Detection signals — three independent detectors, each returning an AI-likelihood in [0,1].
 
-Signal 1 (LLM, this milestone) follows the RepairSafe shape:
-    build prompt -> single chat completion -> parse -> validate -> FAIL-CLOSED fallback.
+  Signal 1  signal_llm        semantic/voice judgment via Groq (RepairSafe shape:
+                              build prompt -> chat completion -> parse -> validate -> FAIL-CLOSED).
+  Signal 2  signal_stylometry statistical form: sentence-length burstiness, MATTR, punctuation.
+  Signal 3  signal_lexical    surface fingerprint: phrases LLMs overuse (ensemble stretch).
 
-"Fail closed" here means: on any parse/validation failure we return a neutral 0.5 and mark the
-signal unavailable, so an error can never produce a confident "AI" accusation.
-
-Signal 2 (stylometry) and score fusion are added in Milestone 4.
+"Fail closed" means: on any parse/validation failure (Signal 1) or too-short text (Signal 2) we
+return a neutral 0.5, so an error can never produce a confident "AI" accusation. Fusion of the
+three scores into one verdict lives in scoring.py.
 """
 import json
 import re

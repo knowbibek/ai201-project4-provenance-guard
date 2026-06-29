@@ -2,7 +2,7 @@
 
     python selftest.py
 
-Prints both signal scores, the fused confidence, and the verdict for four deliberately chosen
+Prints all three signal scores, the fused confidence, and the verdict for four deliberately chosen
 inputs spanning the confidence range. This is the Milestone 4 calibration check — if the LLM
 column shows available=False, your environment can't reach Groq (check GROQ_API_KEY / network).
 """

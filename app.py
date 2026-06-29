@@ -1,7 +1,7 @@
 """Provenance Guard — Flask API.
 
 Endpoints:
-  POST /submit   text -> two-signal classification + confidence + transparency label (rate limited)
+  POST /submit   text -> three-signal classification + confidence + transparency label (rate limited)
   POST /appeal   contest a classification -> status 'under_review' + logged (rate limited)
   GET  /log      structured audit log (decisions + any appeals), newest first
   GET  /health   liveness

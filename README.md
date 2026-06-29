@@ -67,7 +67,7 @@ curl -s -X POST http://localhost:5000/submit \
 ```
 
 Returns `content_id`, `attribution`, `confidence`, `label`, and the per-signal `signals` array.
-Save the `content_id` — it's how you appeal a decision (M5). View the audit log: `curl -s http://localhost:5000/log`.
+Save the `content_id` — it's how you appeal a decision. View the audit log: `curl -s http://localhost:5000/log`.
 
 ## API
 
@@ -89,9 +89,10 @@ curl -s -X POST http://localhost:5000/appeal \
 ## Architecture
 
 A submission flows: `POST /submit` → **rate limiter** → **Signal 1 (LLM, Groq)** + **Signal 2
-(stylometry)** → **confidence fusion** (weighting + agreement + asymmetric thresholds) → **label
-builder** → **audit log (SQLite)** → JSON response. An appeal flows: `POST /appeal` → look up the
-original decision → write a linked appeal row + set status `under_review` → response.
+(stylometry)** + **Signal 3 (lexical)** → **confidence fusion** (LLM-primary + secondary panel +
+asymmetric thresholds) → **label builder** → **audit log (SQLite)** → JSON response. An appeal
+flows: `POST /appeal` → look up the original decision → write a linked appeal row + set status
+`under_review` → response.
 
 Full narrative and labeled diagrams for both flows: [planning.md](planning.md#architecture-diagram).
 
@@ -111,30 +112,32 @@ the combination beats any one alone:
   Asymmetric — markers are positive evidence of AI; their absence is only weak evidence of human.
   *Blind spot:* trivially evaded by prompting around the wordlist; blind to clean, marker-free AI.
 
-**Why these two (the reasoning, not just the what):** the requirement is *independence* — two signals
-that fail in different ways. The LLM reasons about *meaning and voice*; stylometry measures *form* and
-never reads a word for sense. Their blind spots barely overlap, which is the point: when a polished AI
-paragraph fools stylometry, the LLM still catches it; when the LLM over-flags formal human prose,
-stylometry's disagreement pulls the verdict back toward "uncertain." A second LLM prompt would have
-been easier but *correlated* — it would share the first one's blind spots and add little. Stylometry is
-deliberately the cheap, transparent, offline counterweight to the opaque, paid, non-deterministic LLM.
+**Why this combination (the reasoning, not just the what):** the requirement is *independence* —
+signals that fail in different ways. The LLM reasons about *meaning and voice*; stylometry measures
+*form* and never reads a word for sense; the lexical detector matches a *specific surface fingerprint*.
+Their blind spots barely overlap, which is the point: when a polished AI paragraph fools stylometry,
+the LLM still catches it; when the LLM over-flags formal human prose, the heuristics' disagreement
+pulls the verdict back toward "uncertain." A second LLM prompt would have been easier but *correlated*
+— it would share the first one's blind spots and add little. The pure-Python signals are deliberately
+the cheap, transparent, offline counterweight to the opaque, paid, non-deterministic LLM.
 
 **What I'd change for a real deployment:** (1) replace the hand-tuned stylometric cutoffs with values
 calibrated on a labeled corpus per genre (poetry vs. essays need different burstiness baselines);
 (2) run the LLM signal at low temperature across a few samples and average, to tame its
-non-determinism; (3) add a third, independent signal (e.g. a perplexity/detector model) so a single
-signal's failure can be outvoted rather than just lowering confidence. See
+non-determinism; (3) add a fourth, model-based signal (e.g. a perplexity detector) so the panel can
+*outvote* a wrong LLM rather than only eroding its confidence. See
 [planning.md](planning.md#detection-signals).
 
 ## Confidence Scoring
 
 We track `ai_likelihood ∈ [0,1]` (direction: 0 = human, 1 = AI) and a separate `confidence ∈ [0,1]`.
-`ai_likelihood` is the weighted average `0.6·LLM + 0.4·stylometry`. Confidence treats the **LLM as the
-primary signal** (it's far stronger at this task): `base = 2·|LLM−0.5|` sets the ceiling, and
-stylometry then **corroborates** (same side → raises confidence) or **dissents** (opposite side →
-erodes it). Because `base` comes only from the LLM, stylometry can never assert a verdict alone — if
-the LLM is unavailable, confidence collapses to ~0 → `uncertain` (**fail-closed**). Users never see the
-raw decimal; they see a confidence *band* + plain language.
+`ai_likelihood` is the weighted average `0.6·LLM + 0.4·panel`, where the **panel** fuses the two
+pure-Python heuristics (`0.6·stylometry + 0.4·lexical`). Confidence treats the **LLM as the primary
+signal** (it's far stronger at this task): `base = 2·|LLM−0.5|` sets the ceiling, and the panel then
+**corroborates** (same side → raises confidence) or **dissents** (opposite side → erodes it). Because
+`base` comes only from the LLM, the panel can never assert a verdict alone — if the LLM is unavailable,
+confidence collapses to ~0 → `uncertain` (**fail-closed**). Users never see the raw decimal; they see a
+confidence *band* + plain language.
 
 The mapping is **not** a binary flip at 0.5 — it's an **asymmetric three-way** split (harder to assert
 "AI" than "human", because false positives are the worst outcome):
