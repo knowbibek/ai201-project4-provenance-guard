@@ -160,3 +160,77 @@ def signal_stylometry(text: str) -> dict:
         "available": True,
         "low_reliability": low_reliability,
     }
+
+
+# ---------------------------------------------------------------------------
+# Signal 3 — lexical "AI-tell" detector (pure Python, no network)
+# Matches a curated surface fingerprint of phrases/words LLMs overuse. Distinct from stylometry
+# (statistical form) and the LLM (meaning). Asymmetric: markers are positive evidence of AI;
+# their absence is only weak evidence of human. See planning.md "Ensemble detection".
+# ---------------------------------------------------------------------------
+
+_AI_TELLS = [
+    "it is important to note",
+    "it is worth noting",
+    "it is essential to",
+    "furthermore",
+    "moreover",
+    "in conclusion",
+    "in summary",
+    "overall",
+    "paradigm shift",
+    "delve",
+    "tapestry",
+    "leverage",
+    "underscore",
+    "navigate the complexities",
+    "in today's fast-paced",
+    "in the realm of",
+    "plays a crucial role",
+    "plays a vital role",
+    "a testament to",
+    "ever-evolving",
+    "ever-changing",
+    "robust",
+    "seamless",
+    "holistic",
+    "cutting-edge",
+    "transformative",
+    "multifaceted",
+    "foster",
+    "realm",
+    "comprehensive",
+]
+
+
+def signal_lexical(text: str) -> dict:
+    """Return Signal 3's assessment of `text`.
+
+    Output:
+        {"name": "lexical", "score": 0-1, "distinct_markers": int, "total_hits": int,
+         "markers": [...], "available": True}
+    where score is AI-likelihood (0 = human, 1 = AI), driven by how many *distinct* AI-tell
+    markers appear. Absence of markers yields a mildly human-leaning 0.45 (weak evidence).
+    """
+    lowered = text.lower()
+    found = []
+    total_hits = 0
+    for phrase in _AI_TELLS:
+        count = lowered.count(phrase)
+        if count:
+            found.append(phrase)
+            total_hits += count
+
+    distinct = len(found)
+    # 0 markers -> 0.45 (mild human lean); each distinct marker adds 0.13, capped at 0.95.
+    score = _clamp01(0.45 + 0.13 * distinct)
+    score = min(score, 0.95)
+
+    return {
+        "name": "lexical",
+        "score": round(score, 4),
+        "distinct_markers": distinct,
+        "total_hits": total_hits,
+        "markers": found,
+        "available": True,
+    }

@@ -39,6 +39,7 @@ def init_db() -> None:
                 ai_likelihood    REAL,
                 llm_score        REAL,
                 stylometry_score REAL,
+                lexical_score    REAL,
                 label_variant    TEXT,
                 label_text       TEXT,
                 signals_json     TEXT,
@@ -68,11 +69,11 @@ def log_decision(record: dict) -> None:
             """
             INSERT INTO decisions (
                 content_id, creator_id, title, timestamp, content_excerpt,
-                attribution, confidence, ai_likelihood, llm_score, stylometry_score,
+                attribution, confidence, ai_likelihood, llm_score, stylometry_score, lexical_score,
                 label_variant, label_text, signals_json, status
             ) VALUES (
                 :content_id, :creator_id, :title, :timestamp, :content_excerpt,
-                :attribution, :confidence, :ai_likelihood, :llm_score, :stylometry_score,
+                :attribution, :confidence, :ai_likelihood, :llm_score, :stylometry_score, :lexical_score,
                 :label_variant, :label_text, :signals_json, :status
             )
             """,
@@ -82,7 +83,7 @@ def log_decision(record: dict) -> None:
     print(
         f"[DECISION] {record['attribution']} conf={record.get('confidence')} "
         f"llm={record.get('llm_score')} sty={record.get('stylometry_score')} "
-        f"id={record['content_id'][:8]} \"{excerpt}…\"",
+        f"lex={record.get('lexical_score')} id={record['content_id'][:8]} \"{excerpt}…\"",
         flush=True,
     )
 

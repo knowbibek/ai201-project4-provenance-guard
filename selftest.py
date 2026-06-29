@@ -7,7 +7,7 @@ inputs spanning the confidence range. This is the Milestone 4 calibration check 
 column shows available=False, your environment can't reach Groq (check GROQ_API_KEY / network).
 """
 from scoring import score_confidence
-from signals import signal_llm, signal_stylometry
+from signals import signal_lexical, signal_llm, signal_stylometry
 
 CASES = {
     "CLEAR AI": (
@@ -37,16 +37,20 @@ CASES = {
 
 
 def main() -> None:
-    print(f"{'case':26s} {'llm':>6s} {'avail':>6s} {'sty':>6s} {'ai_lik':>7s} {'conf':>6s}  verdict")
-    print("-" * 78)
+    print(
+        f"{'case':26s} {'llm':>6s} {'avail':>6s} {'sty':>6s} {'lex':>6s} "
+        f"{'ai_lik':>7s} {'conf':>6s}  verdict"
+    )
+    print("-" * 86)
     for name, text in CASES.items():
         llm = signal_llm(text)
         sty = signal_stylometry(text)
-        v = score_confidence(llm, sty)
+        lex = signal_lexical(text)
+        v = score_confidence(llm, sty, lex)
         print(
             f"{name:26s} {llm['score']:>6.3f} {str(llm['available']):>6s} "
-            f"{sty['score']:>6.3f} {v['ai_likelihood']:>7.3f} {v['confidence']:>6.3f}  "
-            f"{v['attribution']}"
+            f"{sty['score']:>6.3f} {lex['score']:>6.3f} {v['ai_likelihood']:>7.3f} "
+            f"{v['confidence']:>6.3f}  {v['attribution']}"
         )
 
 

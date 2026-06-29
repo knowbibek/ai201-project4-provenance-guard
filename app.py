@@ -16,7 +16,7 @@ from flask_limiter.util import get_remote_address
 from audit import _utc_now, get_log, init_db, log_appeal, log_decision
 from labels import build_label
 from scoring import score_confidence
-from signals import signal_llm, signal_stylometry
+from signals import signal_lexical, signal_llm, signal_stylometry
 
 app = Flask(__name__)
 init_db()
@@ -49,9 +49,10 @@ def submit():
     content_id = str(uuid.uuid4())
     llm = signal_llm(text)
     stylometry = signal_stylometry(text)
-    verdict = score_confidence(llm, stylometry)
+    lexical = signal_lexical(text)
+    verdict = score_confidence(llm, stylometry, lexical)
     label = build_label(verdict["attribution"])
-    signals = [llm, stylometry]
+    signals = [llm, stylometry, lexical]
 
     record = {
         "content_id": content_id,
@@ -64,6 +65,7 @@ def submit():
         "ai_likelihood": verdict["ai_likelihood"],
         "llm_score": llm["score"],
         "stylometry_score": stylometry["score"],
+        "lexical_score": lexical["score"],
         "label_variant": label["variant"],
         "label_text": label["text"],
         "signals_json": json.dumps(signals),

@@ -339,10 +339,33 @@ For each milestone: which spec sections to hand the AI tool, what to ask it to g
 
 ## Stretch Features (update this section before starting any)
 
-- [ ] Ensemble detection (3+ signals, documented weighting/voting)
+- [x] **Ensemble detection (3+ signals, documented weighting/voting)** — see plan below
 - [ ] Provenance certificate ("verified human" credential)
 - [ ] Analytics dashboard (detection patterns, appeal rate, + one more metric)
 - [ ] Multi-modal support (second content type)
+
+### Ensemble detection — plan
+
+Add **Signal 3 — lexical "AI-tell" detector** (pure Python, distinct from the other two): scans for a
+curated set of phrases/words LLMs overuse (`furthermore`, `it is important to note`, `paradigm shift`,
+`delve`, `tapestry`, `leverage`, `underscores`, …). Output is an AI-likelihood in [0,1] driven by how
+many *distinct* markers appear. It is **asymmetric**: markers are positive evidence of AI, while their
+absence is only weak evidence of human (clean human writing has none either).
+
+**Why distinct from the existing two:** the LLM judges *meaning/voice*; stylometry measures *statistical
+form*; the lexical detector matches a *specific surface fingerprint*. Three different failure modes.
+
+**Weighting / voting strategy (documented conflict resolution):**
+- The **LLM stays primary** (the strongest judge). The two heuristic signals (stylometry + lexical)
+  form a **secondary panel**, combined into one panel score: `0.6·stylometry + 0.4·lexical` (or, when
+  stylometry trips its short-text reliability guard, the panel falls back to the lexical score).
+- `ai_likelihood = 0.6·LLM + 0.4·panel`. Confidence is still LLM-led (`base = 2·|LLM−0.5|`), with the
+  **panel** corroborating (same side → raises confidence) or dissenting (opposite → erodes it).
+- **Conflict resolution:** (a) LLM vs. panel disagreement erodes confidence → `uncertain` (false-positive
+  safe); (b) within-panel disagreement (stylometry vs. lexical pointing opposite) averages toward
+  neutral, automatically *reducing* the panel's pull — a built-in down-weight of an unreliable panel.
+- All three individual signal scores are returned in `/submit`'s `signals` array and stored in the
+  audit log, so the ensemble result is always shown alongside its components.
 
 ## Open Questions (resolve during M4 tuning)
 
