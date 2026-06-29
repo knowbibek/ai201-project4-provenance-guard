@@ -149,19 +149,19 @@ text). Treating the LLM as the confidence *driver* and stylometry as corroborati
 while preserving the false-positive guard — stylometry that *actively disagrees* still erodes
 confidence to "uncertain."
 
-**Two example submissions (real scores, from `python selftest.py`):**
+**Two example submissions (real scores from live runs):**
 
 | | Text | LLM (s1) | Stylometry (s2) | ai_likelihood | confidence | verdict |
 |---|---|---|---|---|---|---|
 | **High confidence** | *"ok so i finally tried that new ramen place downtown and honestly? underwhelming…"* | 0.20 | 0.167 | **0.187** | **0.84** | `likely_human` |
-| **Lower confidence** | *"The relationship between monetary policy and asset price inflation has been extensively studied in the literature…"* | 0.80 | 0.50 | 0.755 | **0.55** | `uncertain` |
+| **Lower confidence** | *"The relationship between monetary policy and asset price inflation has been extensively studied in the literature…"* | 0.80 | 0.562 | 0.696 | **0.649** | `uncertain` |
 
 The casual human note scores **0.84** confidence — both signals agree it's human, so the system states
 it plainly. The formal academic passage is the interesting one: the LLM leans AI (0.80, fooled by the
-uniform academic register), but the text is short enough to trip the stylometry reliability cap, so
-confidence is held to **0.55** — below the 0.65 AI bar — and the system says **`uncertain`** rather than
-falsely accusing a human author. Same pipeline, **0.84 vs 0.55**, two different labels: meaningful
-variation, not a constant.
+uniform academic register) and stylometry mildly agrees, yet confidence lands at **0.649 — just below
+the 0.65 AI bar** — so the system says **`uncertain`** rather than falsely accusing a human author. That
+margin is the false-positive guard doing its job. Same pipeline, **0.84 vs 0.649**, two different
+labels: meaningful variation, not a constant.
 
 **How else it was tested:** the fusion in [scoring.py](scoring.py) was checked against seven boundary
 pairs, all matching spec, including the two that matter most: opposite signals (the poem case) →
@@ -237,18 +237,24 @@ console summary. `GET /log` returns the entries as JSON, newest first. Each row 
 `ai_likelihood`, `llm_score`, `stylometry_score`, `label_variant`/`label_text`, the full `signals`
 array, `status`, and (if appealed) `appeal_id` / `appeal_reasoning` / `appealed_at`.
 
-Example `GET /log` output — 3 structured entries, **one appealed** (`status: under_review` with
-`appeal_reasoning`). LLM scores read `0.5`/`uncertain` only because the offline build environment
-couldn't reach Groq; run locally for real scores:
+Real `GET /log` output — 3 structured entries spanning **all three verdicts**, one appealed
+(`status: under_review` with `appeal_reasoning`). Trimmed for length; live runs include the full
+`signals` array, `content_excerpt`, `label_text`, and timestamps:
 
 ```json
 {"entries": [
-  {"content_id": "66cd3b0b-…", "creator_id": "u3", "attribution": "uncertain", "confidence": 0.0,
-   "llm_score": 0.5, "stylometry_score": 0.167, "label_variant": "uncertain", "status": "classified"},
-  {"content_id": "57e06905-…", "creator_id": "u2", "attribution": "uncertain", "status": "classified", "…": "…"},
-  {"content_id": "b9a9116a-…", "creator_id": "u1", "attribution": "uncertain", "status": "under_review",
+  {"content_id": "4a7fb631-…", "creator_id": "demo-human", "title": "ramen",
+   "attribution": "likely_human", "confidence": 0.84, "ai_likelihood": 0.187,
+   "llm_score": 0.2, "stylometry_score": 0.167, "label_variant": "high_confidence_human",
+   "status": "under_review",
    "appeal_reasoning": "I wrote this myself from personal experience. I am a non-native English speaker…",
-   "appealed_at": "2026-06-28T18:28:43.969Z"}
+   "appealed_at": "2026-06-29T00:36:16.609Z"},
+  {"content_id": "…", "creator_id": "demo-formal", "title": "econ",
+   "attribution": "uncertain", "confidence": 0.649, "ai_likelihood": 0.696,
+   "llm_score": 0.8, "stylometry_score": 0.562, "label_variant": "uncertain", "status": "classified"},
+  {"content_id": "…", "creator_id": "demo-ai", "title": "AI essay",
+   "attribution": "likely_ai", "confidence": 0.831, "ai_likelihood": 0.818,
+   "llm_score": 0.9, "stylometry_score": 0.578, "label_variant": "high_confidence_ai", "status": "classified"}
 ]}
 ```
 
